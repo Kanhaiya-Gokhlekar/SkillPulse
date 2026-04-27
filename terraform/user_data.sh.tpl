@@ -19,9 +19,8 @@ apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
 usermod -aG docker ubuntu
 
-# --- Pull the app skeleton onto the box ---
-sudo -u ubuntu git clone ${repo_url} /home/ubuntu/skillpulse-src
-sudo -u ubuntu cp -r /home/ubuntu/skillpulse-src/skillpulse /home/ubuntu/skillpulse
+# --- Clone the repo (the repo root IS the app dir) ---
+sudo -u ubuntu git clone ${repo_url} /home/ubuntu/skillpulse
 
 # --- Build the .env file for compose ---
 sudo -u ubuntu cp /home/ubuntu/skillpulse/.env.example /home/ubuntu/skillpulse/.env

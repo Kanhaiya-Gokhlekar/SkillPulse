@@ -63,21 +63,23 @@ One EC2 box runs everything (MySQL included, in a container with a named volume)
 
 ## 4. Repository Layout (after this work)
 
+The repo IS the app — no `skillpulse/` subfolder. Repo root contains the compose file, app dirs, and the `terraform/` + `.github/` infra.
+
 ```
-github-actions-masterclass/
+SkillPulse/
 ├── CLAUDE.md
 ├── Deployment.md                  ← this file
 ├── README.md
+├── .gitignore
+├── docker-compose.yml             ← backend uses image: (see §8)
+├── .env.example
+├── backend/                       ← Go + Gin REST API
+├── frontend/                      ← HTML/CSS/JS
+├── nginx/                         ← reverse-proxy config
+├── mysql/                         ← init.sql
 ├── chapters/
 │   └── ...
-├── skillpulse/                    ← app (already in place)
-│   ├── backend/
-│   ├── frontend/
-│   ├── nginx/
-│   ├── mysql/
-│   ├── docker-compose.yml         ← will be edited (see §8)
-│   └── .env.example
-├── terraform/                     ← NEW
+├── terraform/
 │   ├── main.tf                    ← provider, EC2, key pair, SG
 │   ├── variables.tf               ← region, instance_type, repo_url, dockerhub_username
 │   ├── outputs.tf                 ← public IP, ssh user, private key
@@ -169,9 +171,8 @@ apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
 usermod -aG docker ubuntu
 
-# Pull the app skeleton (compose file, nginx config, mysql init, frontend) onto the box
-sudo -u ubuntu git clone ${repo_url} /home/ubuntu/skillpulse-src
-sudo -u ubuntu cp -r /home/ubuntu/skillpulse-src/skillpulse /home/ubuntu/skillpulse
+# Clone the repo (the repo root IS the app dir — compose file at root)
+sudo -u ubuntu git clone ${repo_url} /home/ubuntu/skillpulse
 
 # Build the .env file for compose
 sudo -u ubuntu cp /home/ubuntu/skillpulse/.env.example /home/ubuntu/skillpulse/.env
@@ -205,7 +206,7 @@ Five secrets total.
 
 ## 8. Compose Change Required
 
-Current `skillpulse/docker-compose.yml`:
+Current `docker-compose.yml`:
 
 ```yaml
 backend:

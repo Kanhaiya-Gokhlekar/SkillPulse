@@ -70,7 +70,7 @@ jobs:
 
       - uses: docker/build-push-action@v5
         with:
-          context: ./skillpulse/backend
+          context: ./backend
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/skillpulse-backend:${{ github.sha }}
@@ -151,13 +151,12 @@ github-actions-masterclass/
 │   ├── 03-ci-build-push/README.md
 │   ├── 04-terraform-ec2/README.md
 │   └── 05-cd-ssh-deploy/README.md
-├── skillpulse/                      # The sample app (already copied in)
-│   ├── backend/
-│   ├── frontend/
-│   ├── nginx/
-│   ├── mysql/
-│   ├── docker-compose.yml           # backend service uses image: (see §8 of Deployment.md)
-│   └── .env.example
+├── docker-compose.yml               # backend service uses image: (see §8 of Deployment.md)
+├── .env.example
+├── backend/                         # Go + Gin REST API
+├── frontend/                        # HTML/CSS/JS
+├── nginx/                           # Reverse proxy config
+├── mysql/                           # init.sql
 ├── terraform/                       # One-time infra (Ch 4)
 │   ├── main.tf
 │   ├── variables.tf
