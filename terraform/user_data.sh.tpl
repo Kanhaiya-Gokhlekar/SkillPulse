@@ -18,7 +18,7 @@ apt-get update -y
 apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
 usermod -aG docker ubuntu
-
+newgrp docker
 # --- Clone the repo (the repo root IS the app dir) ---
 sudo -u ubuntu git clone ${repo_url} /home/ubuntu/skillpulse
 
