@@ -1,6 +1,6 @@
 # SkillPulse Deployment Plan
 
-End-to-end plan for getting SkillPulse running on AWS via Terraform + GitHub Actions. This is a **plan**, not the final code — we'll write the actual `.tf` and `.yml` files in the chapters.
+End-to-end plan for getting SkillPulse running on AWS via Terraform + GitHub Actions. **Validated end-to-end** on 2026-04-27 — every section below reflects what actually shipped and was tested (apply → CI → CD → live, then destroy → re-apply → still works, then frontend change → live).
 
 ---
 
@@ -8,11 +8,10 @@ End-to-end plan for getting SkillPulse running on AWS via Terraform + GitHub Act
 
 One push to `main` →
 1. `ci.yml` builds the backend image and pushes to Docker Hub.
-2. `cd.yml` SSHes into a pre-provisioned EC2 instance.
-3. EC2 pulls the new image and restarts the compose stack.
-4. `http://<ec2-public-ip>` serves the latest SkillPulse.
+2. `cd.yml` SSHes into the EC2, runs `git pull` + `docker compose pull` + `docker compose up -d`.
+3. `http://<ec2-public-ip>` serves the latest SkillPulse.
 
-The EC2 instance itself is created **once** by Terraform, run locally by the instructor. After that, every deploy is automated.
+The EC2 itself is created **once** by Terraform, run locally by the instructor. After that, every app deploy is automated.
 
 ---
 
@@ -23,7 +22,7 @@ The EC2 instance itself is created **once** by Terraform, run locally by the ins
                     │              GitHub                 │
                     │  ┌──────────┐    ┌──────────────┐   │
    git push ───────►│  │  Repo    │───►│   Actions    │   │
-                    │  └──────────┘    │  ci.yml→cd.yml│  │
+                    │  └──────────┘    │ ci.yml→cd.yml│   │
                     └────────────────────────┬─────────┘
                                              │
                        ┌─────────────────────┼─────────────────┐
@@ -36,9 +35,9 @@ The EC2 instance itself is created **once** by Terraform, run locally by the ins
                        │                     │
                        ▼                     ▼
               ┌──────────────────────────────────────────┐
-              │       EC2 (t3.medium, Ubuntu, us-west-2) │
+              │  EC2 (t3.medium, Ubuntu 24.04, us-west-2)│
               │  ┌──────┐  ┌──────────┐  ┌────────────┐  │
-              │  │nginx │──│ backend  │──│  mysql 8   │  │
+              │  │nginx │──│ backend  │──│  mysql 8.4 │  │
               │  └──────┘  └──────────┘  └────────────┘  │
               │            docker compose                │
               └──────────────────────────────────────────┘
@@ -55,20 +54,21 @@ One EC2 box runs everything (MySQL included, in a container with a named volume)
 
 - AWS account with billing alarm set
 - AWS CLI configured locally (`aws configure`) — Terraform reads creds from there
-- Terraform CLI installed (`>= 1.6`)
-- A Docker Hub account + access token (not password)
+- Terraform CLI (`>= 1.6`; we test on `1.14.x`)
+- Docker Hub account + access token (PAT, not password)
 - A **public** GitHub repo with the SkillPulse code
+- `gh` CLI installed and authenticated (`gh auth login`) — used to set repo secrets from the terminal
 
 ---
 
-## 4. Repository Layout (after this work)
+## 4. Repository Layout
 
 The repo IS the app — no `skillpulse/` subfolder. Repo root contains the compose file, app dirs, and the `terraform/` + `.github/` infra.
 
 ```
 SkillPulse/
 ├── CLAUDE.md
-├── Deployment.md                  ← this file
+├── DEPLOYMENT.md                  ← this file
 ├── README.md
 ├── .gitignore
 ├── docker-compose.yml             ← backend uses image: (see §8)
@@ -82,13 +82,14 @@ SkillPulse/
 ├── terraform/
 │   ├── main.tf                    ← provider, EC2, key pair, SG
 │   ├── variables.tf               ← region, instance_type, repo_url, dockerhub_username
-│   ├── outputs.tf                 ← public IP, ssh user, private key
+│   ├── outputs.tf                 ← public IP, ssh user, private key, app URL
 │   ├── user_data.sh.tpl           ← bootstrap template (docker, compose, app dir)
-│   └── .gitignore                 ← state files, .pem
+│   ├── terraform.tfvars.example   ← copy to terraform.tfvars and fill in
+│   └── .gitignore                 ← state files, .pem, *.tfvars
 └── .github/
     └── workflows/
         ├── ci.yml                 ← build + push to Docker Hub
-        └── cd.yml                 ← SSH + compose pull/up (split, uses workflow_run)
+        └── cd.yml                 ← git pull + compose pull/up via SSH (workflow_run)
 ```
 
 `terraform/` runs locally (not in CI). State is local — fine for a course.
@@ -96,6 +97,10 @@ SkillPulse/
 ---
 
 ## 5. Terraform Resources
+
+### Provider versions (pinned in `main.tf`)
+- `hashicorp/aws ~> 6.0` (lock file pins `6.42.0` as of 2026-04)
+- `hashicorp/tls ~> 4.0` (lock pins `4.2.1`)
 
 ### `main.tf`
 - `provider "aws"` — region from variable
@@ -106,12 +111,12 @@ SkillPulse/
   - ingress 80 from `0.0.0.0/0`
   - egress all
 - `aws_instance`:
-  - AMI: latest Ubuntu 22.04 LTS via `data "aws_ami"` filter (Canonical owner ID `099720109477`)
+  - AMI: latest **Ubuntu 24.04 LTS (Noble Numbat)** via `data "aws_ami"` (Canonical owner `099720109477`, name pattern `ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*`)
   - `instance_type = var.instance_type` (default `t3.medium`)
   - `key_name = aws_key_pair.this.key_name`
   - `vpc_security_group_ids = [aws_security_group.this.id]`
-  - `user_data = templatefile("${path.module}/user_data.sh.tpl", { repo_url = var.repo_url, dockerhub_username = var.dockerhub_username })`
-  - `root_block_device { volume_size = 20 }` — give MySQL room
+  - `user_data = templatefile("${path.module}/user_data.sh.tpl", { repo_url = ..., dockerhub_username = ... })`
+  - `root_block_device { volume_size = 20, volume_type = "gp3" }` — `delete_on_termination` defaults to `true`, so destroy is clean
   - tags: `Name = "skillpulse"`
 
 ### `variables.tf`
@@ -123,7 +128,7 @@ variable "key_pair_name"      { default = "skillpulse-key" }
 
 variable "repo_url" {
   description = "Public GitHub repo URL containing the SkillPulse code"
-  # e.g. "https://github.com/LondheShubham153/github-actions-masterclass.git"
+  # e.g. "https://github.com/LondheShubham153/SkillPulse.git"
 }
 
 variable "dockerhub_username" {
@@ -139,9 +144,10 @@ output "ssh_private_key" {
   value     = tls_private_key.this.private_key_pem
   sensitive = true
 }
+output "app_url"        { value = "http://${aws_instance.this.public_ip}" }
 ```
 
-After `apply`, the instructor runs `terraform output -raw ssh_private_key > skillpulse-key.pem` once, then pastes that content into a GitHub secret.
+After `apply`, run `terraform output -raw ssh_private_key > skillpulse-key.pem && chmod 600 skillpulse-key.pem`.
 
 ---
 
@@ -153,7 +159,7 @@ Templated by Terraform — `${repo_url}` and `${dockerhub_username}` get filled 
 #!/bin/bash
 set -euxo pipefail
 
-# Install Docker + Compose plugin
+# --- Install Docker + Compose plugin from Docker's official apt repo ---
 apt-get update -y
 apt-get install -y ca-certificates curl gnupg git
 
@@ -163,90 +169,126 @@ curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
 chmod a+r /etc/apt/keyrings/docker.gpg
 
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-  https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
   > /etc/apt/sources.list.d/docker.list
 
 apt-get update -y
 apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
 usermod -aG docker ubuntu
+newgrp docker
 
-# Clone the repo (the repo root IS the app dir — compose file at root)
+# --- Clone the repo (the repo root IS the app dir) ---
 sudo -u ubuntu git clone ${repo_url} /home/ubuntu/skillpulse
 
-# Build the .env file for compose
+# --- Build the .env file for compose ---
 sudo -u ubuntu cp /home/ubuntu/skillpulse/.env.example /home/ubuntu/skillpulse/.env
 echo "DOCKERHUB_USERNAME=${dockerhub_username}" | sudo -u ubuntu tee -a /home/ubuntu/skillpulse/.env
 
-# Compose will pull the backend image from Docker Hub on first `up` (after CI runs once)
+# Compose will pull the backend image from Docker Hub on first `up` (after CI runs once).
 ```
+
+> Cosmetic note: the resulting `.env` ends up with `DOCKERHUB_USERNAME` listed twice — once with the placeholder from `.env.example`, once with the real value appended. Compose uses the last occurrence, so behavior is correct. A `sed -i` replace would polish this if you care.
 
 ---
 
 ## 7. Outputs → GitHub Secrets
 
-After `terraform apply`, copy these values into the repo's **Settings → Secrets and variables → Actions**:
+Five secrets total. Three flow from Terraform, two from Docker Hub.
 
-| Terraform output | GitHub secret name | Notes |
+| Secret | Source | Refresh on each `terraform apply`? |
 |---|---|---|
-| `ec2_public_ip` | `EC2_HOST` | e.g. `54.218.10.42` |
-| `ec2_user` | `EC2_USER` | always `ubuntu` |
-| `ssh_private_key` | `EC2_SSH_KEY` | full PEM, including BEGIN/END lines |
+| `EC2_HOST` | `terraform output -raw ec2_public_ip` | **Yes** — public IP changes each instance |
+| `EC2_SSH_KEY` | `skillpulse-key.pem` (from `terraform output`) | **Yes** — key pair regenerated each apply |
+| `EC2_USER` | constant `ubuntu` | No |
+| `DOCKERHUB_USERNAME` | your Docker Hub login | No |
+| `DOCKERHUB_TOKEN` | Docker Hub → Account Settings → Security → New Access Token | No (rotate when leaked) |
 
-Plus, set up these manually (not from Terraform):
+### Setting them via `gh` CLI
 
-| Secret | Where to get it |
-|---|---|
-| `DOCKERHUB_USERNAME` | Your Docker Hub username |
-| `DOCKERHUB_TOKEN` | Docker Hub → Account Settings → Security → New Access Token |
+```bash
+# After `terraform apply`, from the terraform/ directory:
+terraform output -raw ssh_private_key > skillpulse-key.pem && chmod 600 skillpulse-key.pem
 
-Five secrets total.
+REPO=<user>/<repo>
+
+# Stable secrets (set once, ever)
+gh secret set EC2_USER            --body "ubuntu"                 --repo $REPO
+gh secret set DOCKERHUB_USERNAME  --body "<your-dh-username>"     --repo $REPO
+gh secret set DOCKERHUB_TOKEN     --repo $REPO   # paste PAT when prompted, or pipe via stdin
+
+# Refreshed every terraform apply
+gh secret set EC2_HOST            --body "$(terraform output -raw ec2_public_ip)" --repo $REPO
+gh secret set EC2_SSH_KEY         --repo $REPO < skillpulse-key.pem
+```
 
 ---
 
 ## 8. Compose Change Required
 
-Current `docker-compose.yml`:
-
-```yaml
-backend:
-  build: ./backend
-```
-
-We swap it to:
+`docker-compose.yml` backend service references an image, not a build context:
 
 ```yaml
 backend:
   image: ${DOCKERHUB_USERNAME}/skillpulse-backend:latest
 ```
 
-`DOCKERHUB_USERNAME` is read from the `.env` file on the EC2 box (written by `user_data.sh.tpl`, see §6). So compose substitutes the username at `up` time.
+`DOCKERHUB_USERNAME` is read from `.env` on the EC2 box (written by `user_data.sh.tpl`, see §6).
 
-For local dev, learners either set `DOCKERHUB_USERNAME` in their own `.env`, or they can temporarily flip the line back to `build: ./backend` while iterating on the backend.
+For local dev: either set `DOCKERHUB_USERNAME` in your local `.env`, or temporarily flip the line back to `build: ./backend` while iterating on backend code.
 
 ---
 
-## 9. End-to-End Deployment Flow
+## 9. What flows through CI/CD (and what doesn't)
 
-**One-time (instructor):**
-1. `cd terraform && terraform init`
-2. `terraform apply -var "repo_url=https://github.com/<USER>/<REPO>.git" -var "dockerhub_username=<USER>"`
-3. Capture outputs → paste into GitHub secrets (5 secrets total)
-4. Verify EC2 is reachable: `ssh -i skillpulse-key.pem ubuntu@<ip>` and `docker --version`
+The pipeline has **two delivery paths**. Knowing this is the difference between a deploy that works and one that silently does nothing.
+
+| Change to… | Reaches EC2 via | Why |
+|---|---|---|
+| Backend Go code | **Docker Hub image** (built by `ci.yml`) | The Dockerfile bakes the binary into the image; `docker compose pull` fetches it. |
+| Frontend (HTML/CSS/JS) | **`git pull` in `cd.yml`** | nginx serves frontend from a volume mount of `/home/ubuntu/skillpulse/frontend/`, not from an image. |
+| `docker-compose.yml`, `nginx/`, `mysql/init.sql` | **`git pull` in `cd.yml`** | Same — these are read from the EC2 disk. |
+
+That's why `cd.yml` does **both** `git pull` *and* `docker compose pull`:
+
+```yaml
+script: |
+  cd ~/skillpulse
+  git pull origin main
+  docker compose pull
+  docker compose up -d
+  docker image prune -f
+```
+
+If you remove `git pull`, frontend and config edits will silently never deploy — confirmed during dry-run.
+
+---
+
+## 10. End-to-End Deployment Flow
+
+**One-time per EC2 (instructor):**
+
+1. `cd terraform && cp terraform.tfvars.example terraform.tfvars` — fill in `repo_url` and `dockerhub_username`
+2. `terraform init && terraform apply -auto-approve`
+3. Set the 5 GitHub secrets (see §7 commands)
+4. Verify SSH + cloud-init: `ssh -i skillpulse-key.pem ubuntu@<ip> 'cloud-init status --wait && docker --version'`
 
 **Every push to `main` (automated):**
-1. **`ci.yml`** runs:
-   - checkout
-   - login to Docker Hub
-   - build + push `skillpulse-backend:latest` and `:${sha}`
-2. **`cd.yml`** runs (triggered via `workflow_run` after `ci.yml` succeeds on `main`):
-   - SSH into EC2
-   - `cd ~/skillpulse && docker compose pull && docker compose up -d`
-3. Refresh `http://<ec2-public-ip>` → new version live.
+
+1. **`ci.yml`** — checkout → setup-buildx → login Docker Hub → build & push `:latest` and `:${sha}`
+2. **`cd.yml`** — triggers via `workflow_run` after CI succeeds → SSH to EC2 → `git pull origin main` + `docker compose pull` + `docker compose up -d` + `docker image prune -f`
+3. Refresh `http://<ec2-public-ip>` → new version live
+
+**Re-running from scratch (e.g., between recordings):**
+
+1. `terraform destroy -auto-approve`
+2. `terraform apply -auto-approve` (new IP, new key)
+3. Refresh **only** `EC2_HOST` + `EC2_SSH_KEY` secrets (the other 3 are stable)
+4. Push (or `git commit --allow-empty -m "trigger"`) → pipeline runs
 
 ---
 
-## 10. Cost Estimate (us-west-2)
+## 11. Cost Estimate (us-west-2)
 
 | Resource | Monthly (approx) |
 |---|---|
@@ -255,25 +297,46 @@ For local dev, learners either set `DOCKERHUB_USERNAME` in their own `.env`, or 
 | Data transfer | ~$1 (light traffic) |
 | **Total running 24/7** | **~$33/mo** |
 | **Total if stopped between sessions** | **~$2/mo** |
+| **Total per recording (apply → record → destroy)** | **a few cents** |
 
-For a recording, run `terraform apply` → record → `terraform destroy`. Total cost: a few cents per session.
+`terraform destroy` is verified clean: 0 leftover EC2/EBS/snapshots/EIPs after destroy. The only AWS cost-incurring resources Terraform doesn't manage are Elastic IPs and EBS snapshots — and we don't create either. See dry-run audit in §13.
 
 ---
 
-## 11. Decisions Locked
+## 12. Decisions Locked
 
 | Decision | Choice |
 |---|---|
 | AWS region | `us-west-2` (Oregon) |
 | Instance type | `t3.medium` |
-| AMI | Ubuntu 22.04 LTS (latest from Canonical) |
+| AMI | **Ubuntu 24.04 LTS (Noble Numbat)** — `hvm-ssd-gp3` family |
+| AWS Terraform provider | `~> 6.0` (lock pins `6.42.0`) |
 | Repo visibility | **Public** — user_data clones over HTTPS, no deploy key needed |
-| Compose change | Backend service swapped to `image:` (read from `.env` on EC2) |
+| Backend delivery | Docker Hub image, pulled by compose on each deploy |
+| Frontend / config delivery | `git pull origin main` in `cd.yml` |
 | CI/CD layout | **Split** — `ci.yml` builds & pushes; `cd.yml` triggered via `workflow_run` |
 | Terraform run location | Local, one-time — not in a GitHub Actions workflow |
 | Terraform state | Local file, gitignored |
-| MySQL | Container on EC2 with a named volume (no RDS) |
+| MySQL | Container on EC2 with a named volume (no RDS); destroy = data loss |
 | SSH ingress | `0.0.0.0/0` for course simplicity (callout to lock down in real use) |
 | Domain / TLS | None — IP-only access |
+| EBS root volume | 20 GiB gp3, `delete_on_termination = true` (destroy is clean) |
+| Pinned action versions | `actions/checkout@v6`, `docker/setup-buildx-action@v4`, `docker/login-action@v4`, `docker/build-push-action@v7`, `appleboy/ssh-action@v1` |
+| Stack versions | Go `1.26`, Alpine `3.23`, MySQL `8.4`, nginx `alpine` |
 
-Next up: write `terraform/*.tf`, `user_data.sh.tpl`, `.github/workflows/ci.yml`, `.github/workflows/cd.yml`, and then the chapter READMEs.
+---
+
+## 13. Validation Status (2026-04-27)
+
+| Check | Result |
+|---|---|
+| `terraform apply` (4 resources) | ~20s ✓ |
+| user_data finishes (cloud-init) | ~90s ✓ |
+| `ci.yml` build + push (Docker Hub) | ~55s ✓ |
+| `cd.yml` SSH deploy | ~38s ✓ |
+| Backend image change end-to-end | ✓ |
+| Frontend change end-to-end | ✓ (after adding `git pull`) |
+| `POST /api/skills` write path | ✓ |
+| MySQL persistence (named volume) | ✓ |
+| Destroy → re-apply repeatability | ✓ |
+| AWS leftovers post-destroy | 0 (no EC2, EBS, snapshots, EIPs, key pairs, SGs) |

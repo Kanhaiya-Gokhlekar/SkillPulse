@@ -85,7 +85,7 @@ jobs:
 - Outputs: `ec2_public_ip`, `ec2_user`, `ssh_private_key` (sensitive)
 - **Hands-on**: `terraform init && terraform apply -var "repo_url=..." -var "dockerhub_username=..."`. Capture outputs into 5 GitHub secrets (`EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY` from Terraform; `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` manually). SSH in to verify.
 
-> Full plan in `Deployment.md`. Terraform runs locally, once — it's instructor-side prep, not part of the GitHub Actions workflow learners write.
+> Full plan in `DEPLOYMENT.md`. Terraform runs locally, once — it's instructor-side prep, not part of the GitHub Actions workflow learners write.
 
 ### Chapter 5: cd.yml — Deploy via SSH (20-25 min)
 - The CD mindset: after CI succeeds, ship to the server
@@ -151,7 +151,7 @@ github-actions-masterclass/
 │   ├── 03-ci-build-push/README.md
 │   ├── 04-terraform-ec2/README.md
 │   └── 05-cd-ssh-deploy/README.md
-├── docker-compose.yml               # backend service uses image: (see §8 of Deployment.md)
+├── docker-compose.yml               # backend service uses image: (see §8 of DEPLOYMENT.md)
 ├── .env.example
 ├── backend/                         # Go + Gin REST API
 ├── frontend/                        # HTML/CSS/JS
@@ -163,7 +163,7 @@ github-actions-masterclass/
 │   ├── outputs.tf
 │   ├── user_data.sh.tpl
 │   └── .gitignore
-├── Deployment.md                    # End-to-end deployment plan
+├── DEPLOYMENT.md                    # End-to-end deployment plan
 └── .github/
     └── workflows/
         ├── ci.yml                   # Build & push (Ch 3)
@@ -197,7 +197,7 @@ github-actions-masterclass/
 
 ### EC2 Setup (Chapter 4 — Terraform-managed)
 
-Everything below is handled by `terraform/user_data.sh.tpl`. Learners don't run any of it by hand. See `Deployment.md` for the full plan.
+Everything below is handled by `terraform/user_data.sh.tpl`. Learners don't run any of it by hand. See `DEPLOYMENT.md` for the full plan.
 
 - Region: `us-west-2`, AMI: latest Ubuntu 22.04 LTS, instance: `t3.medium`, root volume: 20 GiB
 - Security group: ingress 22 (`0.0.0.0/0` for course; lock down in real use) + 80 (`0.0.0.0/0`)
