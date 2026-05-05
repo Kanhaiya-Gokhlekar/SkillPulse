@@ -2,11 +2,11 @@ name: CD - Deploy
 'on':
   workflow_run:
     workflows:
-      - CI Workflow
+      - CI - Build and Push Docker Images
     types:
       - completed
     branches:
-      - blue-green-deployment
+      - blu-grren-deployment
 jobs:
   deploy:
     runs-on: ubuntu-latest
