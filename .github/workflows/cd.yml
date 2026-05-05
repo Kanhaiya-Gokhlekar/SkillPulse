@@ -1,14 +1,15 @@
 name: CD - Deploy
-
-on:
-  push:
+'on':
+  workflow_run:
+    workflows:
+      - CI Workflow
+    types:
+      - completed
     branches:
-      - main
-
+      - blue-green-deployment
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
