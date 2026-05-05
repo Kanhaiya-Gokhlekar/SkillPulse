@@ -3,7 +3,7 @@ name: CI - Build and Push Docker Images
 on:
   push:
     branches:
-      - blu-grren-deployment
+      - main
 
 jobs:
   build-and-push:
