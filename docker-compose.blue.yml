@@ -1,0 +1,18 @@
+services:
+  backend:
+    image: ${DOCKERHUB_USERNAME}/skillpulse-backend:latest
+    container_name: backend-blue
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+
+  nginx:
+    image: ${DOCKERHUB_USERNAME}/skillpulse-nginx:latest
+    container_name: nginx-blue
+    ports:
+      - "8081:80"
+    depends_on:
+      - backend
