@@ -27,7 +27,7 @@ jobs:
             cd ~
 
             if [ ! -d "SkillPulse" ]; then
-              git clone -b blu-grren-deployment https://github.com/YOUR_USERNAME/SkillPulse.git
+              git clone -b main https://github.com/Kanhaiya-Gokhlekar/SkillPulse.git
             fi
 
             cd SkillPulse
