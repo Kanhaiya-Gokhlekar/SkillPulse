@@ -1,5 +1,6 @@
 name: CD - Deploy
-'on':
+
+on:
   workflow_run:
     workflows:
       - CI - Build and Push Docker Images
@@ -7,9 +8,14 @@ name: CD - Deploy
       - completed
     branches:
       - main
+
+  workflow_dispatch:
+
 jobs:
   deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
+
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -18,7 +24,16 @@ jobs:
           username: ubuntu
           key: ${{ secrets.SSH_KEY }}
           script: |
-            cd ~/SkillPulse
-            git pull
+            cd ~
+
+            if [ ! -d "SkillPulse" ]; then
+              git clone -b blu-grren-deployment https://github.com/YOUR_USERNAME/SkillPulse.git
+            fi
+
+            cd SkillPulse
+            git fetch origin
+            git checkout blu-grren-deployment
+            git pull origin blu-grren-deployment
+
             chmod +x deploy.sh
             ./deploy.sh
