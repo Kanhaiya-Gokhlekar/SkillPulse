@@ -8,7 +8,7 @@ Thumbs.db
 *.swp
 
 # Local env files
-.env
+
 .env.local
 
 # SSH / certs — never commit
